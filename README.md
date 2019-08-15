@@ -1,8 +1,3 @@
 # Eroica
 
-To do:
-
-- basic scheme-esque parser must be constructed
-- must be able to interpret on the fly the actions of a lisp function for macros
-- establishing how reader macros will interact with the parser
-
+Lisp which can transpile to lua and has normal&reader macros; parser combinators are embedded in the evaluator allowing for quick parsing of DSELs at read time by reader macros; dedicated to the memory of a great man!
