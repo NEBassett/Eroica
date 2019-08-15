@@ -225,14 +225,14 @@ apply env (Func params rest body closure) args =
   then
     throwError $ NumArgs (toInteger $ length params) args
   else
-    (liftIO $ bindVars closure $ zip params args) >>= (bindRest rest) >>= evalBody
+    (liftIO $ bind closure $ zip params args) >>= (bindRest rest) >>= evalBody
   where evalBody nEnv = liftM last $ mapM (eval nEnv) body
-        bindRest (Just x) nEnv = liftIO $ bindVars nEnv $ [(x, List (drop (length params) args))]
+        bindRest (Just x) nEnv = liftIO $ bind nEnv $ [(x, List (drop (length params) args))]
         bindRest Nothing nEnv = return nEnv
 apply env m args = throwError $ NotFunction "Attempted to call something other than a function" m
 
 macroEnv :: IO Env
-macroEnv = nullEnv >>= (flip bindVars $ fmap (\(x, y) -> (x, PrimitiveFunction y)) prims) >>= (flip bindVars globals) >>= (\x-> bindVars x [("parse-expr", LParser $ parseExpr x)])
+macroEnv = nullEnv >>= (flip bind $ fmap (\(x, y) -> (x, PrimitiveFunction y)) prims) >>= (flip bind globals) >>= (\x-> bind x [("parse-expr", LParser $ parseExpr x)])
 
 car :: [Value] -> ThrowsError Value
 car [List (x : xs)] = return x
@@ -268,10 +268,10 @@ expandMacro env (List [Symbol "backquote", form]) = case form of
   m -> return $ List [Symbol "quote", m]
   
 expandMacro env (List (Symbol "defmacro" : List (Symbol name : params) : body)) =
-  fmap (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeNormalFunc env params body >>= defineVar env name)
+  fmap (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeNormalFunc env params body >>= define env name)
   
 expandMacro env (List (Symbol "defmacro" : DottedList (Symbol name : params) varargs : body)) =
-  fmap  (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeVarArgs varargs env params body >>= defineVar env name)
+  fmap  (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeVarArgs varargs env params body >>= define env name)
   
 expandMacro env (List (function : args)) = (do
   func <- eval env function
@@ -288,7 +288,7 @@ eval env val@(Bool _) = return val
 eval env val@(Func _ _ _ _) = return val
 eval env val@(PrimitiveFunction _) = return val
 eval env val@(Stream _) = return val
-eval env (Symbol sym) = getVar env sym
+eval env (Symbol sym) = get env sym
 
 eval env (List (Symbol "lambda" : List params : body)) =
   makeNormalFunc env params body
@@ -305,9 +305,9 @@ eval env (List [Symbol "if", pred, conseq, alt]) =
        Bool False -> eval env alt
        otherwise -> eval env conseq
 
-eval env (List [Symbol "set-var", Symbol sym, form]) = eval env form >>= setVar env sym
+eval env (List [Symbol "set-var", Symbol sym, form]) = eval env form >>= set env sym
 
-eval env (List [Symbol "define-var", Symbol sym, form]) = eval env form >>= defineVar env sym
+eval env (List [Symbol "define-var", Symbol sym, form]) = eval env form >>= define env sym
 
 eval env (List [Symbol "quote", val]) = return val
 
@@ -336,10 +336,10 @@ isNil _ = False
 parseMacroCharacter :: Env -> LispParser Value
 parseMacroCharacter env = do
   pChar <- lookAhead (letter <|> symbol <|> digit)
-  boundForm <- lift $ (getVar env [pChar] `catchError` (\x -> return $ String ""))
+  boundForm <- lift $ (get env [pChar] `catchError` (\x -> return $ String ""))
   (if (isReaderMacro boundForm) then anyChar else parserZero)
   currentStream <- getInput
-  lift $ defineVar env "srcStream" (Stream currentStream)
+  lift $ define env "srcStream" (Stream currentStream)
   value <- lift $ (eval env (List ([((\(List [_, m]) -> m) boundForm), Symbol "srcStream"])))
   if (isNil value)
     then
@@ -348,7 +348,7 @@ parseMacroCharacter env = do
       parserZero)
     else
     (do
-      newStream <- lift $ getVar env "srcStream"
+      newStream <- lift $ get env "srcStream"
       setInput ((\(Stream x) -> x) newStream) 
       return value)
   
@@ -374,7 +374,7 @@ parseNumber = do
 evalRead :: Env -> Value -> LispParser Value
 evalRead env (List [ Symbol "set-macro-character", Symbol macChar, form]) = do
   evaledForm <- lift $ eval env form
-  lift $ defineVar env macChar $ List [Symbol "reader-macro", evaledForm]
+  lift $ define env macChar $ List [Symbol "reader-macro", evaledForm]
   return $ List [Symbol "quote", Symbol "Macro character set"]
 evalRead _ val = return val
 
@@ -428,7 +428,7 @@ liftIntoEval parser env input = join $ (flip fmap) (runParserT evalParser () "" 
   where evalParser = do
           val <- (parser env)
           currentStream  <- getInput
-          lift $ defineVar env "srcStream" (Stream currentStream)
+          lift $ define env "srcStream" (Stream currentStream)
           return val
           
 

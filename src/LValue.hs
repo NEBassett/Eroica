@@ -17,11 +17,12 @@ import Text.ParserCombinators.Parsec
 import Text.Parsec
 import Data.IORef
 import Data.Maybe
+import qualified Data.Map as M
 
 
 type LispParser m = ParsecT String () IOThrowsError m
 
-type Env = IORef [(String, IORef Value)]
+type Env = IORef (M.Map String (IORef Value))
 
 data Value = Symbol String
            | List [Value]
