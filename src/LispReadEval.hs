@@ -23,7 +23,9 @@ globals =
     ("parse-spaces", LParser (spaces >>= (\x -> return (Symbol "spaces")))),
     ("parse-digit", LParser (digit >>= (\x -> return (String [x])))),
     ("parse-symbol", LParser (symbol >>= (\x -> return (String [x])))),
-    ("parse-letter", LParser (letter >>= (\x -> return (String [x]))))
+    ("parse-letter", LParser (letter >>= (\x -> return (String [x])))),
+    ("#t", Bool True),
+    ("#f", Bool False)
   ]
 
 prims :: [(String, Env -> [Value] -> IOThrowsError Value)]
@@ -362,11 +364,7 @@ parseSymbol :: LispParser Value
 parseSymbol = do
   first <- letter <|> symbol
   rest <- many (letter <|> digit <|> symbol)
-  let atom = first:rest
-  return $ case atom of
-    "#t" -> Bool True
-    "#f" -> Bool False
-    _    -> Symbol atom
+  return $ Symbol (first:rest)
 
 parseNumber :: LispParser Value
 parseNumber = do
