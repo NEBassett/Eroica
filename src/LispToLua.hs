@@ -67,6 +67,10 @@ toLua (L.List (L.Symbol "lambda" : L.DottedList params varargs : body)) = (mapM 
 toLua (L.List [L.Symbol "index", tab, field]) = (toLua tab) >>= (\x -> (toLua field) >>= (\y -> return $ Index x  y))
 toLua (L.List [L.Symbol "quote", form]) = case form of
                                             L.List ms -> (mapM toLua ms) >>= (\x -> return $ FunctionCall (Identifier "list") x)
+                                            L.DottedList ms n -> do
+                                              car <- mapM toLua ms
+                                              cdr <- toLua n
+                                              return $ FunctionCall (Identifier "dottedList") (cdr:car)
                                             _ -> toLua form
 
 toLua (L.List (func:args)) = if (isUnsupported func) then

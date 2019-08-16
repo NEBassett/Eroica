@@ -1,7 +1,6 @@
 module Lib
     ( eroicaMain,
-      evalString,
-      compileOne
+      evalString
     ) where
 
 import Text.ParserCombinators.Parsec
@@ -17,43 +16,23 @@ import LispEnv
 import LispToLua
 import System.IO
 
+flStr :: String -> IO ()
+flStr str = putStr str >> hFlush stdout
 
-flushStr :: String -> IO ()
-flushStr str = putStr str >> hFlush stdout
-
-readPrompt :: String -> IO String
-readPrompt prompt = flushStr prompt >> getLine
-
-compileString :: Env -> String -> IO String
-compileString macEnv expr = (runIOThrows $ liftM show $ (readExpr macEnv expr) >>= (expandMacro macEnv) >>= (\x -> liftThrows $ toLua x)) >>= (\x -> return $  LV.luaPrelude ++ x)
-
-compileAndPrint :: Env -> String -> IO ()
-compileAndPrint macEnv expr = (compileString macEnv expr) >>= putStrLn
+rPrompt :: String -> IO String
+rPrompt str = flStr str >> getLine
 
 evalString :: Env -> String -> IO String
-evalString macEnv expr =
-  runIOThrows $ liftM show $ (readExpr macEnv expr) >>= (expandMacro macEnv) >>= (eval macEnv)
+evalString macEnv expr = runIOThrows $ liftM show $ (readExpr macEnv expr) >>= (expandMacro macEnv) >>= (eval macEnv)
 
-evalAndPrint :: Env -> String -> IO ()
-evalAndPrint macEnv expr = evalString macEnv expr >>= putStrLn
-
-until_ :: Monad m => (a -> Bool) -> m a -> ( a -> m ()) -> m ()
-until_ pred prompt action = do
-  result <- prompt
-  if (pred result)
-  then return ()
-  else action result >> until_ pred prompt action
-
-compileOne :: String -> IO ()
-compileOne expr = join $ ((flip compileAndPrint (expr)) <$> macroEnv)
-
-runRepl :: IO ()
-runRepl = join $ ((until_ (== "quit") (readPrompt "Eroica: ")) . evalAndPrint) <$> macroEnv
-
+replLoop :: IO ()
+replLoop = macroEnv >>= (mainLoop . evalString)
+  where mainLoop action = do
+          input <- rPrompt "Eroica: "
+          if input == "(quit)"
+            then return ()
+            else (action input) >>= putStrLn >> (mainLoop action)
+          
+  
 eroicaMain :: IO ()
-eroicaMain = do
-  args <- getArgs
-  case (length args) of
-    0 -> runRepl
-    1 -> compileOne $ args !! 0
-    otherwise -> putStrLn "Usage: ./executable (lispExpression | nothing)"
+eroicaMain = replLoop

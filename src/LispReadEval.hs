@@ -8,12 +8,15 @@ module LispReadEval
 
 
 import LValue
+import qualified LuaValue as LV
 import Control.Monad.Except
 import Control.Monad
 import Text.Parsec
 import Text.Parsec.Number
 import LispEnv
 import Data.Fixed
+import System.Environment
+import LispToLua 
 
 globals :: [(String, Value)]
 globals =
@@ -59,8 +62,16 @@ prims =
     ("parse-char", charLParser),
     ("parse-string", stringLParser),
     ("many", manyLParser),
-    ("one-of", oneOfLParser)
+    ("one-of", oneOfLParser),
+    ("compile-function", compileFunction)
   ]
+
+compileFunction :: Env -> [Value] -> IOThrowsError Value
+compileFunction env [String path, form] = do
+  lua <- liftThrows $ toLua form
+  lift $ writeFile path (LV.luaPrelude ++ (show lua))
+  return form
+compileFunction env m = throwError $ TypeMismatch "path and form to compile" (List m)
 
 tryFuncs :: [Env -> [Value] -> IOThrowsError Value] -> String -> Env -> [Value] -> IOThrowsError Value
 tryFuncs (m:ms) err env args = (eval env (List ((PrimitiveFunction m):args))) `catchError` (\_ -> tryFuncs ms err env args)
@@ -323,10 +334,6 @@ isReaderMacro (List [Symbol "reader-macro", (Func _ _ _ _)]) = True
 isReaderMacro (List [Symbol "reader-macro", (PrimitiveFunction _)]) = True
 isReaderMacro _ = False
 
-isTerminating :: Value -> Bool
-isTerminating (List [_, Bool x, _]) = x
-isTerminating _ = False
-
 symbol :: LispParser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
@@ -353,18 +360,10 @@ parseMacroCharacter env = do
       return value)
   
 parseString :: LispParser Value
-parseString = do
-  char '"'
-  x <- many (noneOf "\"")
-  char '"'
-  return $ String x
-
+parseString = char '"' >> (many (noneOf "\"")) >>= (\x -> (char '"') >> (return $ String x))
 
 parseSymbol :: LispParser Value
-parseSymbol = do
-  first <- letter <|> symbol
-  rest <- many (letter <|> digit <|> symbol)
-  return $ Symbol (first:rest)
+parseSymbol = (letter <|> symbol) >>= (\x -> (many (letter <|> digit <|> symbol)) >>= (\y -> return $ Symbol (x:y)))
 
 parseNumber :: LispParser Value
 parseNumber = do
@@ -397,28 +396,16 @@ parseList :: Env -> LispParser Value
 parseList env = liftM List $ sepBy (parseExpr env) spaces
 
 parseDottedList :: Env -> LispParser Value
-parseDottedList env = do
-  head <- endBy (parseExpr env) spaces
-  tail <- char '.' >> spaces >> (parseExpr env)
-  return $ DottedList head tail
+parseDottedList env = (endBy (parseExpr env) spaces) >>= (\x -> (char '.' >> spaces >> (parseExpr env)) >>= (\y -> return $ DottedList x y)) 
 
 parseQuoted :: Env -> LispParser Value
-parseQuoted env = do
-  char '\''
-  x <- (parseExpr env)
-  return $ List [Symbol "quote", x]
+parseQuoted env = (char '\'') >> (parseExpr env) >>= (\x -> return $ List [Symbol "quote", x])
 
 parseBackquoted :: Env -> LispParser Value
-parseBackquoted env = do
-  char '`'
-  x <- (parseExpr env)
-  return $ List [Symbol "backquote", x]
+parseBackquoted env = (char '`') >> (parseExpr env) >>= (\x -> return $ List [Symbol "backquote", x])
 
 parseCommad :: Env -> LispParser Value
-parseCommad env = do
-  char ','
-  x <- (parseExpr env)
-  return $ List [Symbol "comma", x]
+parseCommad env = (char ',') >> (parseExpr env) >>= (\x -> return $ List [Symbol "comma", x])
 
 liftIntoEval  :: (Env -> LispParser Value) -> Env -> String -> IOThrowsError Value
 liftIntoEval parser env input = join $ (flip fmap) (runParserT evalParser () "" input)

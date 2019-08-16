@@ -78,12 +78,24 @@ local function __listImpl(x, ...)
   return {x, __listImpl(...)}
 end
 
+local function __dottedListImpl (x, y, ...)
+  if y == nil then
+    return x
+  end
+  return {y, __listImpl(...)}
+end
+
 local function list(...)
   local nList = __listImpl(...)
   setmetatable(nList, __listClass)
   return nList
 end
-|] ++ "\n"
+
+local function dottedList(...)
+  local nList = __dottedListImpl(...)
+  setmetatable(nList, __listClass)
+  return nList
+end|] ++ "\n"
 
 luaOps :: [(String, String)]
 luaOps = [
