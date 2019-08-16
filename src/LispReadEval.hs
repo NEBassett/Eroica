@@ -71,11 +71,11 @@ compileFunction env [String path, form] = do
   lua <- liftThrows $ toLua form
   lift $ writeFile path (LV.luaPrelude ++ (show lua))
   return form
-compileFunction env m = throwError $ TypeMismatch "path and form to compile" (List m)
+compileFunction env m = throwError $ BadCall "path and form to compile" m
 
 tryFuncs :: [Env -> [Value] -> IOThrowsError Value] -> String -> Env -> [Value] -> IOThrowsError Value
-tryFuncs (m:ms) err env args = (eval env (List ((PrimitiveFunction m):args))) `catchError` (\_ -> tryFuncs ms err env args)
-tryFuncs [] err env args = throwError $ TypeMismatch err (List args)
+tryFuncs (m:ms) err env args = (eval env (List ((Prim m):args))) `catchError` (\_ -> tryFuncs ms err env args)
+tryFuncs [] err env args = throwError $ BadCall err args
 
 addFunc = tryFuncs [
   liftToBinaryOp toNumber fromNumber (+),
@@ -127,24 +127,24 @@ listEq ms ns = ((length ms) == (length ns)) && ((foldl (&&) True) (zipWith valCo
 
 toEqList :: Value -> IOThrowsError [Value]
 toEqList (List ms) = mapM hasIdentity ms
-  where hasIdentity m@(PrimitiveFunction _) = (throwError $ TypeMismatch "value with identity" m :: IOThrowsError Value)
-        hasIdentity m@(LParser _) = throwError $ TypeMismatch "value with identity" m
-        hasIdentity m@(Func _ _ _ _) = throwError $ TypeMismatch "value with identity" m
+  where hasIdentity m@(Prim _) = (throwError $ BadCall "value with identity" [m] :: IOThrowsError Value)
+        hasIdentity m@(LParser _) = throwError $ BadCall "value with identity" [m]
+        hasIdentity m@(Func _ _ _ _) = throwError $ BadCall "value with identity" [m]
         hasIdentity m = return m
-toEqList m = throwError $ TypeMismatch "list" m
+toEqList m = throwError $ BadCall "list" [m]
 
 toString :: Value -> IOThrowsError String
 toString (String m) = return m
 toString (Symbol m) = return m
-toString m = throwError $ TypeMismatch "string" m
+toString m = throwError $ BadCall "string" [m]
 
 toNumber :: Value -> IOThrowsError Double
 toNumber (Number m) = return m
-toNumber m = throwError $ TypeMismatch "number" m
+toNumber m = throwError $ BadCall "number" [m]
 
 toBool :: Value -> IOThrowsError Bool
 toBool (Bool m) = return m
-toBool m = throwError $ TypeMismatch "bool" m
+toBool m = throwError $ BadCall "bool" [m]
 
 fromString = String
 fromBool = Bool
@@ -157,57 +157,57 @@ liftToBinaryOp to from op = (\_ vals -> case vals of
                                             m <- to a
                                             n <- to b
                                             return $ from (op m n)
-                                          ms -> throwError $ NumArgs 2 ms)
+                                          ms -> throwError $ BadCall "two arguments"  ms)
   
 manyLParser :: Env -> [Value] -> IOThrowsError Value
 manyLParser env [LParser m, combine, def] = return $ LParser $ (many m) >>= (\xs -> lift $ foldM binop def xs)
   where binop x y = eval env $ List [combine, x, y]
-manyLParser env m = throwError $ TypeMismatch "parser, fold operator, and fold default" (List m)
+manyLParser env m = throwError $ BadCall "parser, fold operator, and fold default" m
 
 tryLParser :: Env -> [Value] -> IOThrowsError Value
 tryLParser env [LParser m] = return $ LParser $ try m
-tryLParser env m = throwError $ TypeMismatch "parser" (List m)
+tryLParser env m = throwError $ BadCall "parser"  m
 
 stringLParser :: Env -> [Value] -> IOThrowsError Value
 stringLParser env [String m] = return $ LParser $ (string m >>= (\x -> return $ String x))
-stringLParser env m = throwError $ TypeMismatch "string" (List m)
+stringLParser env m = throwError $ BadCall "string"  m
 
 oneOfLParser :: Env -> [Value] -> IOThrowsError Value
 oneOfLParser env [String m] = return $ LParser $ (oneOf m >>= (\x -> return $ String [x]))
-oneOfLParser env m = throwError $ TypeMismatch "string" (List m)
+oneOfLParser env m = throwError $ BadCall "string"  m
 
 charLParser :: Env -> [Value] -> IOThrowsError Value
 charLParser env [String [m]] = return $ LParser $ (char m >>= (\x -> return $ String [x]))
-charLParser env m = throwError $ TypeMismatch "string containing a single character" (List m)
+charLParser env m = throwError $ BadCall "string containing a single character" m
 
 fastChoiceLParsers :: Env -> [Value] -> IOThrowsError Value
 fastChoiceLParsers env parsers = (mapM unwrapParsers parsers) >>= (\x -> return $ LParser $ (foldl (<|>) parserZero (fmap toParser x)))
   where unwrapParsers val@(LParser p) = (return val :: IOThrowsError Value)
-        unwrapParsers m = throwError $ TypeMismatch "every item to be a parser" m
+        unwrapParsers m = throwError $ BadCall "every item to be a parser" [m]
         toParser (LParser p) = p
 
 choiceLParsers :: Env -> [Value] -> IOThrowsError Value
 choiceLParsers env parsers = (mapM unwrapParsers parsers) >>= (\x -> return $ LParser $ choice (fmap toParser x))
   where unwrapParsers val@(LParser p) = (return val :: IOThrowsError Value)
-        unwrapParsers m = throwError $ TypeMismatch "a list of parsers " m
+        unwrapParsers m = throwError $ BadCall "a list of parsers " [m]
         toParser (LParser p) = p
         
 bindLParsers :: Env -> [Value] -> IOThrowsError Value
 bindLParsers env [LParser m, f] = return $ LParser $ m >>= (\x -> lift $ eval env (List [f, x]))
-bindLParsers env m = throwError $ TypeMismatch "a parser and a function to bind it with" (List m)
+bindLParsers env m = throwError $ BadCall "a parser and a function to bind it with"  m
 
 connectLParsers :: Env -> [Value] -> IOThrowsError Value
 connectLParsers env [LParser m, LParser n] = return $ LParser (m >> n)
-connectLParsers env m = throwError $ TypeMismatch "two parsers to bind together" (List m)
+connectLParsers env m = throwError $ BadCall "two parsers to bind together"  m
 
 runLParser :: Env -> [Value] -> IOThrowsError Value
 runLParser env [LParser m, (Stream n)] = liftIntoEval (\x -> m) env n
 runLParser env [LParser m, (Stream n), otherwise] = (liftIntoEval (\x -> m) env n) `catchError` (\x -> return $ otherwise)
-runLParser env m = throwError $ TypeMismatch "parser and stream to parse" (List m)
+runLParser env m = throwError $ BadCall "parser and stream to parse"  m
 
 equalPrim :: Env -> [Value] -> IOThrowsError Value
 equalPrim _ [m, n] = equal m n
-equalPrim _ l = throwError $ NumArgs 2 l
+equalPrim _ l = throwError $ BadCall "two arguments" l
 
 equal :: Value -> Value -> IOThrowsError Value
 equal (List xs) (List ys) = foldr bAppend (return $ Bool True) (zipWith equal xs ys)
@@ -220,50 +220,50 @@ equal (Symbol m) (Symbol n) = return $ Bool $ m == n
 equal (String m) (String n) = return $ Bool $ m == n
 equal (Number m) (Number n) = return $ Bool $ m == n
 equal (Bool m) (Bool n) = return $ Bool $ m == n
-equal m n = throwError $ TypeMismatch "f g ; where f and g are of the same type" $ List [m, n]
+equal m n = throwError $ BadCall "f g ; where f and g are of the same type" $ [m, n]
 
 liftToPrimitive :: ([Value] -> ThrowsError Value) -> (Env -> [Value] -> IOThrowsError Value)
 liftToPrimitive func = (\_ vals -> liftThrows $ (func vals))
 
 liftOverStream :: (Env -> String -> IOThrowsError Value) -> Env -> [Value] -> IOThrowsError Value
 liftOverStream func env [(Stream v)] =  func env v
-liftOverStream func _ xs = throwError $ TypeMismatch "stream" (List xs)
+liftOverStream func _ xs = throwError $ BadCall "stream"  xs
 
 apply :: Env -> Value -> [Value] -> IOThrowsError Value
-apply env (PrimitiveFunction func) args = func env args
+apply env (Prim func) args = func env args
 apply env (Func params rest body closure) args =
   if (length params) > (length args)
   then
-    throwError $ NumArgs (toInteger $ length params) args
+    throwError $ BadCall ((show (toInteger $ length params)) ++ " arguments") args
   else
     (liftIO $ bind closure $ zip params args) >>= (bindRest rest) >>= evalBody
   where evalBody nEnv = liftM last $ mapM (eval nEnv) body
         bindRest (Just x) nEnv = liftIO $ bind nEnv $ [(x, List (drop (length params) args))]
         bindRest Nothing nEnv = return nEnv
-apply env m args = throwError $ NotFunction "Attempted to call something other than a function" m
+apply env m args = throwError $ NotFunc "Attempted to call something other than a function" m
 
 macroEnv :: IO Env
-macroEnv = nullEnv >>= (flip bind $ fmap (\(x, y) -> (x, PrimitiveFunction y)) prims) >>= (flip bind globals) >>= (\x-> bind x [("parse-expr", LParser $ parseExpr x)])
+macroEnv = nullEnv >>= (flip bind $ fmap (\(x, y) -> (x, Prim y)) prims) >>= (flip bind globals) >>= (\x-> bind x [("parse-expr", LParser $ parseExpr x)])
 
 car :: [Value] -> ThrowsError Value
 car [List (x : xs)] = return x
 car [DottedList (x : xs) _] = return x
-car [other] = throwError $ TypeMismatch "pair" other
-car other = throwError $ NumArgs 1 other
+car [other] = throwError $ BadCall "list" [other]
+car other = throwError $ BadCall "one argument" other
 
 cdr :: [Value] -> ThrowsError Value
 cdr [List (x : xs)] = return $ List xs
 cdr [DottedList [_] x] = return x
 cdr [DottedList(_ : xs) x] = return $ DottedList xs x
-cdr [other] = throwError $ TypeMismatch "pair" other
-cdr other = throwError $ NumArgs 1 other
+cdr [other] = throwError $ BadCall "list" [other]
+cdr other = throwError $ BadCall "one argument" other
 
 cons :: [Value] -> ThrowsError Value
 cons [x, List[]] = return $ List [x]
 cons [x, List xs] = return $ List $ x : xs
 cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
 cons [x, y] = return $ DottedList [x] y
-cons other = throwError $ NumArgs 2 other
+cons other = throwError $ BadCall "two arguments" other
 
 makeFunc varargs env params body = return $ Func (fmap show params) varargs body env
 makeNormalFunc = makeFunc Nothing
@@ -297,7 +297,7 @@ eval env val@(String _) = return val
 eval env val@(Number _) = return val
 eval env val@(Bool _) = return val
 eval env val@(Func _ _ _ _) = return val
-eval env val@(PrimitiveFunction _) = return val
+eval env val@(Prim _) = return val
 eval env val@(Stream _) = return val
 eval env (Symbol sym) = get env sym
 
@@ -327,11 +327,11 @@ eval env (List (function : args)) = do
   argVals <- mapM (eval env) args
   apply env func argVals
   
-eval env m = throwError $ BadSpecialForm "Unknown special form: " m
+eval env m = throwError $ BadForm "Unknown form: " m
 
 isReaderMacro :: Value -> Bool
 isReaderMacro (List [Symbol "reader-macro", (Func _ _ _ _)]) = True
-isReaderMacro (List [Symbol "reader-macro", (PrimitiveFunction _)]) = True
+isReaderMacro (List [Symbol "reader-macro", (Prim _)]) = True
 isReaderMacro _ = False
 
 symbol :: LispParser Char
