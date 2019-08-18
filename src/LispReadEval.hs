@@ -278,17 +278,25 @@ expandMacro env (List [Symbol "backquote", form]) = case form of
             commaEval m = return m
   m -> return $ List [Symbol "quote", m]
   
-expandMacro env (List (Symbol "defmacro" : List (Symbol name : params) : body)) =
-  fmap (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeNormalFunc env params body >>= define env name)
+expandMacro env (List (Symbol "defmacro" : List (Symbol name : params) : body)) = do
+  func <- makeNormalFunc env params body
+  define env name (List [Symbol "macro", func])
+  return $ List [Symbol "quote", Symbol "Macro successfully created"]
   
-expandMacro env (List (Symbol "defmacro" : DottedList (Symbol name : params) varargs : body)) =
-  fmap  (\x -> List [Symbol "quote", Symbol "Macro successfully created"]) (makeVarArgs varargs env params body >>= define env name)
+expandMacro env (List (Symbol "defmacro" : DottedList (Symbol name : params) varargs : body)) = do
+  func <- makeVarArgs varargs env params body
+  define env name (List [Symbol "macro", func])
+  return $  List [Symbol "quote", Symbol "Macro successfully created"]
   
 expandMacro env (List (function : args)) = (do
   func <- eval env function
-  (apply env func args) >>= (expandMacro env))
+  if (isMacro func) then ((apply env (unwrapMacro func) args) >>= (expandMacro env)) else (throwError $ Arbitrary))
   `catchError`
   (\x -> fmap List (mapM (expandMacro env) (function : args)))
+  where isMacro (List [Symbol "macro", form]) = True
+        isMacro _ = False
+        unwrapMacro (List [Symbol "macro", form]) = form
+        unwrapMacro _ = Symbol "nil"
   
 expandMacro env m = return m 
 

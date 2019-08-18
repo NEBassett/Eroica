@@ -42,6 +42,7 @@ data LError = BadCall String [Value]
             | UnboundVar String String
             | NotFunc String Value
             | WrongTime String Value
+            | Arbitrary
 
 type ThrowsError = Either LError
 
@@ -56,6 +57,7 @@ showe (NotFunc msg func) = msg ++ ": " ++ showv func
 showe (BadCall msg vals) = "Bad call: expected " ++ msg ++ ", got: " ++ (unwords $ fmap show vals)
 showe (Parser parseErr) = "Parse error at " ++ show parseErr
 showe (WrongTime m v) = "Unsupported functionality: " ++ m ++ (show v)
+showe Arbitrary = "Arbitrary error; you should not be seeing this"
 
 showv :: Value -> String
 showv (LParser _) = "<parser>"

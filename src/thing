@@ -1,0 +1,56 @@
+
+local __listClass = {type = "list"}
+
+__listClass.__index = __listClass
+
+local function car(lst)
+  if type(lst) ~= "table" or lst.type ~= "list" then error("car must be called upon lists only") end
+  if lst == nil then return nil end 
+  return lst[1]
+end
+
+local function cdr(lst)
+  if type(lst) ~= "table" or lst.type ~= "list" then error("cdr must be called upon lists only") end
+  local m = lst[2]
+  if m == nil then return m end
+  setmetatable(m, __listClass)
+  return lst[2]
+end
+
+__listClass.__eq = function(a, b)
+  local function recursiveEq(m, n)
+    local k = car(m)
+    if car(n) ~= car(m) then return false end 
+    if k == nil then return true end 
+    return recursiveEq(cdr(m), cdr(n))
+  end
+
+  return recursiveEq(a,b)
+end
+
+local function __listImpl(x, ...)
+  if x == nil then
+    return nil
+  end
+  return {x, __listImpl(...)}
+end
+
+local function __dottedListImpl (x, y, ...)
+  if y == nil then
+    return x
+  end
+  return {y, __listImpl(...)}
+end
+
+local function list(...)
+  local nList = __listImpl(...)
+  setmetatable(nList, __listClass)
+  return nList
+end
+
+local function dottedList(...)
+  local nList = __dottedListImpl(...)
+  setmetatable(nList, __listClass)
+  return nList
+end
+cake
